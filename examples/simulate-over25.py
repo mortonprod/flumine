@@ -24,6 +24,7 @@ FIELDNAMES = [
     "bet_id",
     "strategy_name",
     "market_id",
+    "market_type",
     "selection_id",
     "trade_id",
     "date_time_placed",
@@ -56,6 +57,7 @@ class BacktestLoggingControl(LoggingControl):
         orders = event.event
         with open("sim_result.csv", "a") as m:
             for order in orders:
+                # pprint(vars(order))
                 if order.order_type.ORDER_TYPE == OrderTypes.LIMIT:
                     size = order.order_type.size
                 else:
@@ -70,6 +72,7 @@ class BacktestLoggingControl(LoggingControl):
                         "bet_id": order.bet_id,
                         "strategy_name": order.trade.strategy,
                         "market_id": order.market_id,
+                        "market_type": order.market_type,
                         "selection_id": order.selection_id,
                         "trade_id": order.trade.id,
                         "date_time_placed": order.responses.date_time_placed,
@@ -108,23 +111,25 @@ class BackEvensStrategy(BaseStrategy):
         print("starting strategy 'BackEvensStrategy'")
 
     def check_market_book(self, market: Market, market_book: MarketBook) -> bool:
+        # pprint(vars(market_book))
         # process_market_book only executed if this returns True
         if market_book.status != "CLOSED":
-            return True
+            if market_book.market_definition.market_type == "OVER_UNDER_25":
+                return True
         
     def process_market_book(self, market: Market, market_book: MarketBook) -> None:
         # pprint(vars(market.market_book))
         # pprint(vars(market.market_book.market_definition))
         runner_id_to_name = {}
         for runner in market.market_book.market_definition.runners:
-            # pprint(vars(runner))
+            # pprint(vars(runner.name))
             # print(f"{runner.selection_id} --- {runner.name}")
             runner_id_to_name[runner.selection_id] = runner.name
         # pprint(runner_id_to_name)
         for runner in market_book.runners:
             if runner_id_to_name[runner.selection_id] == "Over 2.5 Goals":
                 # print(runner.last_price_traded)
-                if runner.last_price_traded >= 2.0:
+                if runner.last_price_traded >= 2.5:
                     # print("TRADE")
                     trade = Trade(
                         market_id=market_book.market_id,
@@ -133,7 +138,7 @@ class BackEvensStrategy(BaseStrategy):
                         strategy=self,
                     )
                     order = trade.create_order(
-                        side="BACK", order_type=LimitOrder(price=runner.last_price_traded, size=1)
+                        side="BACK", order_type=LimitOrder(price=runner.last_price_traded, size=5)
                     )
                     market.place_order(order)
 
@@ -141,7 +146,7 @@ class BackEvensStrategy(BaseStrategy):
         # print("Process closed")
 
 # Searches for all betfair data files within the folder sample_monthly_data_output
-data_folder = "../../../data/betfair/soccer/BASIC/2022/Jan/1/31144803"
+data_folder = "../../../data/betfair/soccer/BASIC/2022/Jan/1/31144803/"
 # data_folder = '../../../data/betfair/soccer/BASIC/2022/'
 data_files = os.listdir(data_folder,)
 data_files = [f'{data_folder}/{path}' for path in data_files]
@@ -159,10 +164,10 @@ strategy = BackEvensStrategy(
         'market_types':['OVER_UNDER_25'],
         "listener_kwargs": {"inplay": True},  
     },
-    max_order_exposure=1,
-    max_selection_exposure=1,
-    max_live_trade_count=1,
-    max_trade_count=1,
+    max_order_exposure=5, # The maximum amount of money to bet with a single order
+    max_selection_exposure=15, # Max amount of money on a single runner type
+    max_live_trade_count=10, # Max number of trades to be live at a time
+    max_trade_count=10, # Max number of trades to do
 )
 
 framework.add_logging_control(
