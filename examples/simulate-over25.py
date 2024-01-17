@@ -169,10 +169,10 @@ strategy = BackEvensStrategy(
         'market_types':['OVER_UNDER_25'],
         "listener_kwargs": {"inplay": True},  
     },
-    max_order_exposure=100, # The maximum amount of money to bet with a single order
-    max_selection_exposure=1, # Max amount of money on a single runner type
-    max_live_trade_count=100, # Max number of trades to be live at a time
-    max_trade_count=100, # Max number of trades to do
+    max_order_exposure=100, # Max exposure per order
+    max_selection_exposure=1, # Max exposure per selection
+    max_live_trade_count=100, # Max live (with executable orders) trades per runner
+    max_trade_count=100, # Max total number of trades per runner
 )
 
 framework.add_logging_control(
