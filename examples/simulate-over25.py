@@ -54,10 +54,10 @@ class BacktestLoggingControl(LoggingControl):
                 csv_writer.writeheader()
 
     def _process_cleared_orders_meta(self, event):
+        # pprint(event)
         orders = event.event
         with open("sim_result.csv", "a") as m:
             for order in orders:
-                # pprint(vars(order))
                 if order.order_type.ORDER_TYPE == OrderTypes.LIMIT:
                     size = order.order_type.size
                 else:
@@ -67,7 +67,6 @@ class BacktestLoggingControl(LoggingControl):
                 else:
                     price = order.order_type.price
                 try:
-                    # pprint(vars(order))
                     order_data = {
                         "bet_id": order.bet_id,
                         "strategy_name": order.trade.strategy,
@@ -138,7 +137,7 @@ class BackEvensStrategy(BaseStrategy):
                         strategy=self,
                     )
                     order = trade.create_order(
-                        side="BACK", order_type=LimitOrder(price=runner.last_price_traded, size=5)
+                        side="BACK", order_type=LimitOrder(price=runner.last_price_traded, size=1)
                     )
                     market.place_order(order)
 
@@ -146,11 +145,17 @@ class BackEvensStrategy(BaseStrategy):
         # print("Process closed")
 
 # Searches for all betfair data files within the folder sample_monthly_data_output
-data_folder = "../../../data/betfair/soccer/BASIC/2022/Jan/1/31144803/"
+data_folder = "../../../data/betfair/soccer/BASIC/2022/Jan"
+data_files = []
+for path, subdirs, files in os.walk(data_folder):
+    # print(path)
+    for file in files:
+        # print(files)
+        data_files.append(f"{path}/{file}")
+print(f"Number of files {len(data_files)}")
 # data_folder = '../../../data/betfair/soccer/BASIC/2022/'
-data_files = os.listdir(data_folder,)
-data_files = [f'{data_folder}/{path}' for path in data_files]
-
+# data_files = os.listdir(data_folder,)
+# data_files = [f'{data_folder}/{path}' for path in data_files]
 client = clients.SimulatedClient(simulated_full_match=True)
 framework = FlumineSimulation(client=client)
 
@@ -164,10 +169,10 @@ strategy = BackEvensStrategy(
         'market_types':['OVER_UNDER_25'],
         "listener_kwargs": {"inplay": True},  
     },
-    max_order_exposure=5, # The maximum amount of money to bet with a single order
-    max_selection_exposure=15, # Max amount of money on a single runner type
-    max_live_trade_count=10, # Max number of trades to be live at a time
-    max_trade_count=10, # Max number of trades to do
+    max_order_exposure=100, # The maximum amount of money to bet with a single order
+    max_selection_exposure=1, # Max amount of money on a single runner type
+    max_live_trade_count=100, # Max number of trades to be live at a time
+    max_trade_count=100, # Max number of trades to do
 )
 
 framework.add_logging_control(
