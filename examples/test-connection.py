@@ -9,6 +9,7 @@ from flumine.markets.market import Market
 from betfairlightweight.resources import MarketBook, MarketCatalogue
 import betfairlightweight
 from dotenv import load_dotenv
+from getevents import events
 
 load_dotenv()
 
@@ -120,9 +121,6 @@ class TestConnectionStrategy(BaseStrategy):
         
     def process_market_book(self, market: Market, market_book: MarketBook) -> None:
         print(market.event_name)
-        print(vars(market))
-        print(market.market_catalogue.competition.name)
-        print(vars(market_book))
         runner_id_to_name = {}
         for runner in market.market_book.market_definition.runners:
             print(vars(runner))
@@ -142,7 +140,7 @@ class TestConnectionStrategy(BaseStrategy):
 strategy = TestConnectionStrategy(
     market_filter=streaming_market_filter(
         # market_ids=["32938374"],
-        # event_ids=["32902034"],
+        event_ids=events(),
         country_codes=["GB"],
         market_types=["MATCH_ODDS", 'OVER_UNDER_25'],
     ),
