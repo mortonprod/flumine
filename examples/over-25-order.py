@@ -1,28 +1,31 @@
+# Check paper trade: order_package.client.paper_trade
+
+
 import os
-import csv
-import logging
-from flumine.controls.loggingcontrols import LoggingControl
-from flumine.order.ordertype import OrderTypes
-from betfairlightweight.filters import streaming_market_filter
-from flumine import BaseStrategy, Flumine, clients
+from flumine import FlumineSimulation
+from flumine import clients
+from flumine import BaseStrategy
 from flumine.markets.market import Market
-from betfairlightweight.resources import MarketBook, MarketCatalogue
-import betfairlightweight
 from flumine.order.trade import Trade
+from flumine.order.order import LimitOrder
+from flumine.order.ordertype import OrderTypes
+from flumine.controls.loggingcontrols import LoggingControl
+from betfairlightweight.resources import MarketBook
 from flumine.order.order import LimitOrder, OrderStatus
-from dotenv import load_dotenv
+import csv
+from pprint import pprint
+import logging
 
-load_dotenv()
-
-password = os.getenv("PASSWORD")
-app_key = os.getenv("APP_KEY")
+logging.basicConfig(filename = 'sim.log', level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
 
 logger = logging.getLogger(__name__)
 
+# Fields we want to log in our simulations
 FIELDNAMES = [
     "bet_id",
     "strategy_name",
     "market_id",
+    "market_type",
     "selection_id",
     "trade_id",
     "date_time_placed",
@@ -31,33 +34,30 @@ FIELDNAMES = [
     "size",
     "size_matched",
     "profit",
-    "side",
-    "elapsed_seconds_executable",
-    "order_status",
-    "market_note",
-    "trade_notes",
-    "order_notes",
+    "side"
 ]
 
-
-class LiveLoggingControl(LoggingControl):
+# Log results from simulation into csv file named sim_hta_2.csv
+# If the csv file doesn't exist then it is created, otherwise we append results to the csv file
+class BacktestLoggingControl(LoggingControl):
     NAME = "BACKTEST_LOGGING_CONTROL"
+
     def __init__(self, *args, **kwargs):
-        super(LiveLoggingControl, self).__init__(*args, **kwargs)
+        super(BacktestLoggingControl, self).__init__(*args, **kwargs)
         self._setup()
 
-    # Changed file path and checks if the file order_paper.csv already exists, if it doens't then create it
     def _setup(self):
-        if os.path.exists("order_paper.csv"):
+        if os.path.exists("sim_result.csv"):
             logging.info("Results file exists")
         else:
-            with open("order_paper.csv", "w") as m:
+            with open("sim_result.csv", "w") as m:
                 csv_writer = csv.DictWriter(m, delimiter=",", fieldnames=FIELDNAMES)
                 csv_writer.writeheader()
 
     def _process_cleared_orders_meta(self, event):
+        # pprint(event)
         orders = event.event
-        with open("order_paper.csv", "a") as m:
+        with open("sim_result.csv", "a") as m:
             for order in orders:
                 if order.order_type.ORDER_TYPE == OrderTypes.LIMIT:
                     size = order.order_type.size
@@ -72,6 +72,7 @@ class LiveLoggingControl(LoggingControl):
                         "bet_id": order.bet_id,
                         "strategy_name": order.trade.strategy,
                         "market_id": order.market_id,
+                        "market_type": order.market_type,
                         "selection_id": order.selection_id,
                         "trade_id": order.trade.id,
                         "date_time_placed": order.responses.date_time_placed,
@@ -79,13 +80,8 @@ class LiveLoggingControl(LoggingControl):
                         "price_matched": order.average_price_matched,
                         "size": size,
                         "size_matched": order.size_matched,
-                        "profit": 0 if not order.cleared_order else order.cleared_order.profit,
-                        "side": order.side,
-                        "elapsed_seconds_executable": order.elapsed_seconds_executable,
-                        "order_status": order.status.value,
-                        "market_note": order.trade.market_notes,
-                        "trade_notes": order.trade.notes_str,
-                        "order_notes": order.notes_str,
+                        "profit": order.simulated.profit,
+                        "side": order.side
                     }
                     csv_writer = csv.DictWriter(m, delimiter=",", fieldnames=FIELDNAMES)
                     csv_writer.writerow(order_data)
@@ -110,53 +106,47 @@ class LiveLoggingControl(LoggingControl):
                 },
             )
 
-class TestConnectionStrategy(BaseStrategy):
-    is_second_half = {}
+class BackEvensStrategy(BaseStrategy):
+    matched_runners = []
     def start(self) -> None:
-        print("starting strategy 'TestConnectionStrategy'")
+        print("starting strategy 'BackEvensStrategy'")
 
     def check_market_book(self, market: Market, market_book: MarketBook) -> bool:
-        print(f"Check market book {market.event_name} {market.market_type}")
-        if market.event_name is not None:
-            self.is_second_half[market.event_name] = True
-            # If half time has passed then this market might not even be here.
-            if market.market_type == "HALF_TIME_SCORE" and market_book.status != "CLOSED":
-                self.is_second_half[market.event_name] = False
+        # pprint(vars(market_book))
+        # process_market_book only executed if this returns True
         if market_book.status != "CLOSED":
-            return True
+            if market_book.market_definition.market_type == "OVER_UNDER_25":
+                return True
         
     def process_market_book(self, market: Market, market_book: MarketBook) -> None:
-        print(f"Process {market.event_name} {market.market_type}")
-        print(f"Start {market.market_start_datetime.day}/{market.market_start_datetime.month}/{market.market_start_datetime.year} {market.market_start_datetime.hour}:{market.market_start_datetime.minute}")
-        print(f"Now {market_book.publish_time.day}/{market_book.publish_time.month}/{market_book.publish_time.year} {market_book.publish_time.hour}:{market_book.publish_time.minute}")
-        time_diff = market_book.publish_time - market.market_start_datetime
-        if (market_book.publish_time > market.market_start_datetime):
-            print(f"Minutes of Match completed including the half time break {time_diff.seconds/60.0}.")
-            if market.event_name is not None:
-                print(f"Is it half time yet: {self.is_second_half[market.event_name]}")
-        else: 
-            print("Game has not started yet")
+        # pprint(vars(market.market_book))
+        # pprint(vars(market.market_book.market_definition))
         runner_id_to_name = {}
-        if market.market_catalogue is not None:
-            for runner in market.market_catalogue.runners:
-                print(f"Set {runner.selection_id} => {runner.runner_name}")
-                runner_id_to_name[runner.selection_id] = runner.runner_name
-            for runner in market_book.runners:
-                print(f"{runner_id_to_name[runner.selection_id]} --- {runner.last_price_traded}")
-                if runner.status == "ACTIVE" and market.market_type == "MATCH_ODDS" and runner.last_price_traded < 1.30:
-                    print("Create order.")
-                    trade = Trade(
-                        market_id=market_book.market_id,
-                        selection_id=runner.selection_id,
-                        handicap=runner.handicap,
-                        strategy=self
-                    )
-                    order = trade.create_order(
-                        side="BACK",
-                        order_type=LimitOrder(price=(runner.last_price_traded - 0.01), size=1.00)
-                    )
-                    market.place_order(order)
-                
+        for runner in market.market_book.market_definition.runners:
+            # pprint(vars(runner.name))
+            # print(f"{runner.selection_id} --- {runner.name}")
+            runner_id_to_name[runner.selection_id] = runner.name
+        # pprint(runner_id_to_name)
+        for runner in market_book.runners:
+            # print(self.matched_runners)
+            if runner.selection_id not in self.matched_runners:
+                # print("Inside")
+                if runner_id_to_name[runner.selection_id] == "Over 2.5 Goals":
+                    # print(runner.last_price_traded)
+                    if runner.last_price_traded >= 2.0:
+                        print(f"TRADE {runner.selection_id} ### {self.matched_runners}")
+                        trade = Trade(
+                            market_id=market_book.market_id,
+                            selection_id=runner.selection_id,
+                            handicap=runner.handicap,
+                            strategy=self,
+                        )
+                        order = trade.create_order(
+                            side="BACK", order_type=LimitOrder(price=runner.last_price_traded, size=1)
+                        )
+                        market.place_order(order)
+                        # print("Match")
+                        self.matched_runners.append(runner.selection_id)
 
     def process_orders(self, market: Market, orders: list) -> None:
         print("Process orders")
@@ -167,33 +157,43 @@ class TestConnectionStrategy(BaseStrategy):
                 if order.elapsed_seconds and order.elapsed_seconds > 2:
                     market.cancel_order(order)
 
+    # def process_closed_market(self, market: Market, market_book: MarketBook):
+        # print("Process closed")
 
-    def process_market_catalogue(self, market: Market, market_catalogue: MarketCatalogue) -> None:
-        print("process market catalogue")
-    def process_raw_data(self, clk: str, publish_time: int, datum: dict) -> None:
-        print("process raw data")
+# Searches for all betfair data files within the folder sample_monthly_data_output
+data_folder = "../../../data/events/BASIC/2022/Jan/1"
+data_files = []
+for path, subdirs, files in os.walk(data_folder):
+    # print(path)
+    for file in files:
+        # print(files)
+        data_files.append(f"{path}/{file}")
+print(f"Number of files {len(data_files)}")
+# data_folder = '../../../data/betfair/soccer/BASIC/2022/'
+# data_files = os.listdir(data_folder,)
+# data_files = [f'{data_folder}/{path}' for path in data_files]
+client = clients.SimulatedClient(simulated_full_match=True)
+framework = FlumineSimulation(client=client)
 
-strategy = TestConnectionStrategy(
-    market_filter=streaming_market_filter(
-        # market_ids=["32938374"],
-        event_ids=["33015772"],
-        # country_codes=["GB"],
-        # Use the halftime market to determine when half time is
-        market_types=["MATCH_ODDS", 'HALF_TIME_SCORE'],
-    ),
+strategy = BackEvensStrategy(
+    # market_filter selects what portion of the historic data we simulate our strategy on
+    # markets selects the list of betfair historic data files
+    # market_types specifies the type of markets
+    # listener_kwargs specifies the time period we simulate for each market
+    market_filter= {
+        "markets": data_files,  
+        'market_types':['OVER_UNDER_25'],
+        "listener_kwargs": {"inplay": True},  
+    },
     max_order_exposure=1, # Max exposure per order
-    max_selection_exposure=1, # Max exposure per selection. A selection would be like loss in (win,draw,loss), i.e the MATCH_ODDS market. Selection is the same as a runner.
-    max_live_trade_count=1, # Max live (with executable orders) trades per runner
-    max_trade_count=1, # Max total number of trades per runner
+    max_selection_exposure=1, # Max exposure per selection
+    max_live_trade_count=100, # Max live (with executable orders) trades per runner
+    max_trade_count=100, # Max total number of trades per runner
 )
 
-trading = betfairlightweight.APIClient("mortonprod", password, app_key=app_key, certs='/home/mortonprod/certs/')
-client = clients.BetfairClient(trading, paper_trade=True)
-framework = Flumine(client=client)
-
 framework.add_logging_control(
-    LiveLoggingControl()
-)   
+    BacktestLoggingControl()
+)
 
 # Run our strategy on the simulated market
 framework.add_strategy(strategy)
