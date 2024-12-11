@@ -149,9 +149,9 @@ class BackEvensStrategy(BaseStrategy):
                         self.matched_runners.append(runner.selection_id)
 
     def process_orders(self, market: Market, orders: list) -> None:
-        print("Process orders")
+        # print("Process orders")
         for order in orders:
-            print(f"Order id {order.id} status {order.status} size remaining {order.size_remaining} persistence type {order.order_type.persistence_type}")
+            # print(f"Order id {order.id} status {order.status} size remaining {order.size_remaining} persistence type {order.order_type.persistence_type}")
             # Kill order if unmatched in market for greater than 2 seconds
             if order.status == OrderStatus.EXECUTABLE:
                 if order.elapsed_seconds and order.elapsed_seconds > 2:
@@ -183,7 +183,8 @@ strategy = BackEvensStrategy(
     market_filter= {
         "markets": data_files,  
         'market_types':['OVER_UNDER_25'],
-        "listener_kwargs": {"inplay": True},  
+        "listener_kwargs": {"inplay": True},
+        "event_processing": True
     },
     max_order_exposure=1, # Max exposure per order
     max_selection_exposure=1, # Max exposure per selection
@@ -198,3 +199,16 @@ framework.add_logging_control(
 # Run our strategy on the simulated market
 framework.add_strategy(strategy)
 framework.run()
+
+for market in framework.markets:
+    print("Profit: {0:.2f}".format(sum([o.profit for o in market.blotter])))
+    for order in market.blotter:
+        print(
+            order.selection_id,
+            order.responses.date_time_placed,
+            order.status,
+            order.order_type.price,
+            order.average_price_matched,
+            order.size_matched,
+            order.profit,
+        )
